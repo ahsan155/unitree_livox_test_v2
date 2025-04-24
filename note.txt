@@ -1,0 +1,13 @@
+prereq
+- create a directory to work from 
+- install python virtual env. 'python3 -m venv /work_directory'
+- clone livox_detection
+- install dependencies 'pip install -r requirements.txt'
+- check cudatoolkit version
+- build the project 'python3 setup.py develop'
+
+steps to get running
+- every window created to run livox detection has to source livox_ros2 workspace
+- go to livox_detection/tools, run test.py to convert custom lidar msg to standard pointcloud msg
+- run transformation cmd 'ros2 run tf2_ros static_transform_publisher --frame-id map --child-frame-id livox_frame --x 0 --y 0 --z 0 --roll 0 --pitch 0 --yaw 0'
+- run 'python3 test_ros_update.py --pt ../pt/livox_model_1.pt'
