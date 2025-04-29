@@ -25,7 +25,7 @@ from geometry_msgs.msg import Point
 import sensor_msgs_py.point_cloud2 as pcl2
 
 
-from vis_ros_update import ROS_MODULE
+from vis_ros_update_2 import ROS_MODULE
 
 last_box_num = 0
 last_gtbox_num = 0
@@ -98,7 +98,6 @@ class RosDemo(Node):
         points_list = pcl2.read_points_numpy(msg, field_names=("x", "y", "z", "intensity"), skip_nans=True)
         #points_list = np.array(points).reshape(-1,4)
         #points_list = np.array(points_list, dtype=np.float32)
-        print('sssss', points_list.shape)
 
 
         # preprocess 
@@ -152,10 +151,8 @@ class RosDemo(Node):
             self.ender.record()
             torch.cuda.synchronize()
             curr_latency = self.starter.elapsed_time(self.ender)
-        print('det_time(ms): ', curr_latency)
         
         data_infer, pred_dicts = ROS_MODULE.gpu2cpu(data_infer, pred_dicts)
-       
         global last_box_num
         last_box_num, _ = ros_vis.ros_print(data_dict['points_rviz'][:, 0:4], pred_dicts=pred_dicts, last_box_num=last_box_num)
 

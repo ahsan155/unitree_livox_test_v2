@@ -24,7 +24,7 @@ from rclpy.duration import Duration
 import matplotlib.pyplot as plt
 
 from trajectory_pred.trajectory_prediction import predict_trajectory
-from util import SimpleTracker
+from util import SimpleTracker, PredictionWorker
 
 
 import os
@@ -126,7 +126,7 @@ class ROS_MODULE(Node):
         super().__init__('vis_ros')
         self.class_names = ['Vehicle', 'Pedestrian', 'Cyclist'] 
         self.node = Node  # Store the node instance for later use (e.g., clock access)
-        self.tracker = SimpleTracker(max_disappeared=5, max_distance=0.2)  # Initialize tracker
+        self.tracker = SimpleTracker(max_disappeared=5, max_distance=0.4)  # Initialize tracker 0.2
 
         # Create publishers using the provided node
         self.pointcloud_pub = self.create_publisher(PointCloud2, '/pointcloud', 10)
@@ -191,11 +191,13 @@ class ROS_MODULE(Node):
         #status.expect_partial()       
         logging.info('Restored checkpoint: %s', checkpoint_path)
 
+        self.prediction_worker = PredictionWorker(self.model)  # Initialize worker
 
         
         
     def __del__(self):
         # Close the file when the node is destroyed
+        self.prediction_worker.stop()  # Cleanup on shutdown
         self.track_file.close()
 
     @staticmethod
@@ -228,62 +230,7 @@ class ROS_MODULE(Node):
         pointcloud_msg = xyzr_to_pc2(pts, header)
         self.pointcloud_pub.publish(pointcloud_msg)
 
-        
-        # print(pointcloud_msg)
-        # input()
-
-        # print("format of boxes\n", pred_dicts[0]['pred_boxes'][0])
-        # print("format of scores\n", pred_dicts[0]['pred_scores'][0])
-        # print("format of labels\n", pred_dicts[0]['pred_labels'][0])
-
                 
-        if gt_boxes is not None:
-            gtbox_array.markers.clear()
-            gt_boxes = boxes_to_corners_3d(gt_boxes)
-            for obid in range(gt_boxes.shape[0]):
-                ob = gt_boxes[obid]
-
-                # boxes
-                marker = Marker()
-                marker.header.frame_id = header.frame_id
-                marker.header.stamp = header.stamp
-                marker.id = obid
-                marker.action = Marker.ADD
-                marker.type = Marker.LINE_LIST
-                marker.lifetime = Duration(0)
-
-                # print(labs)
-                # print(ob)
-                marker.color.r = 1
-                marker.color.g = 1
-                marker.color.b = 1
-                marker.color.a = 1
-                marker.scale.x = 0.05
-                
-                marker.points = []
-                for line in lines:
-                    ptu = gt_boxes[obid][line[0]]
-                    ptv = gt_boxes[obid][line[1]]
-                    marker.points.append(Point(ptu[0], ptu[1], ptu[2]))
-                    marker.points.append(Point(ptv[0], ptv[1], ptv[2]))
-                
-                gtbox_array.markers.append(marker)
-
-            # clear ros cache   
-            if last_gtbox_num > gt_boxes.shape[0]:
-                for i in range(gt_boxes.shape[0], last_gtbox_num):
-                    marker = Marker()
-                    marker.header.frame_id = header.frame_id
-                    marker.header.stamp = header.stamp
-                    marker.id = i
-                    marker.action = Marker.ADD
-                    marker.type = Marker.LINE_LIST
-                    marker.lifetime = Duration(0.01)
-                    marker.color.a = 0
-                    gtbox_array.markers.append(marker)
-
-            self.gtbox_array_pub.publish(gtbox_array)
-
         if pred_dicts is not None:
 
             # Update tracker with pred_boxes
@@ -295,22 +242,14 @@ class ROS_MODULE(Node):
             tracked_objects = self.tracker.update(pred_boxes, pred_scores, pred_labels, current_time)
             boxes = boxes_to_corners_3d(np.array([box for (_, box, _, _, _) in tracked_objects]))
                         
-            '''
-            with open("./unitree_tracking_output.txt", "a") as f:                
-                for track_id, _, _, _, trajectory in tracked_objects:
-                    # Get the last position in the trajectory
-                    last_position = trajectory[-1]  # Format: [timestamp, x, y, z]
-                    x = last_position[1]
-                    y = last_position[2]        
-                    f.write(f"{self.frame_id_num} {track_id} {float(x)} {float(y)}\n")
-            '''
-
-            
+        
             marker_array.markers.clear()
             marker_array_text.markers.clear()
             prediction_marker_array.markers.clear()
 
-            #file =  open("./unitree_tracking_output.txt", "a") 
+            # Submit prediction tasks asynchronously
+            track_ids = []
+            trajectories = []
             
             for idx, (track_id, ob, score, label, trajectory) in enumerate(tracked_objects):
                 # boxes
@@ -338,16 +277,19 @@ class ROS_MODULE(Node):
 
                 if (boxes[idx][0][0] + boxes[idx][2][0]) / 2 > 2.3:
                     continue
-
-
                 marker_array.markers.append(marker)
-                last_position = trajectory[-1]  # Format: [timestamp, x, y, z]
-                x = last_position[1]
-                y = last_position[2] 
-                #file.write(f"{self.start_frame_id}\t{float(track_id)}\t{float(x):.2f}\t{float(y):.2f}\n")
-                self.start_frame_id+=10
-
                 
+
+
+                if len(trajectory) >= 8:
+                    track_ids.append(track_id)
+                    trajectories.append(trajectory)
+                    print("adding trajectory...", self.frame_id_num)
+                else:
+                    print("not adding trajectory...", self.frame_id_num)
+
+
+                '''
                 historical_pos = None
                 trajectory = np.array(trajectory) # historical positions
                 positions = np.zeros((1, 1, 20, 2), dtype=np.float32) # empty array to be filled
@@ -388,7 +330,7 @@ class ROS_MODULE(Node):
                     print("publishing trajectory...", self.frame_id_num)                    
                 else:
                     print("not publishing trajectory...")
-                
+                '''
                
                 
                 # confidence
@@ -406,49 +348,19 @@ class ROS_MODULE(Node):
                 markert.color.g = float(color[1])
                 markert.color.b = float(color[2])
                 markert.color.a = float(1)
-                markert.scale.z = float(0.2)
+                markert.scale.z = float(0.15)
                
                 markert.pose.orientation.w = 1.0
                 
-                markert.pose.position.x = (boxes[idx][0][0] + boxes[idx][2][0]) / 2 + 1
-                markert.pose.position.y = (boxes[idx][0][1] + boxes[idx][2][1]) / 2 + 1
+                markert.pose.position.x = (boxes[idx][0][0] + boxes[idx][2][0]) / 2 + 0.4
+                markert.pose.position.y = (boxes[idx][0][1] + boxes[idx][2][1]) / 2 + 0.4
                 markert.pose.position.z = (boxes[idx][0][2] + boxes[idx][4][2]) / 2 + 0.5
-                #markert.text = self.class_names[label[idx]-1] + ':' + str(np.floor(score[idx] * 100)/100)
                 markert.text = f"{self.class_names[label - 1]}:{track_id}:{score:.2f}"  # Use tracked score and label
-                #print(header.frame_id,track_id, markert.pose.position.x, markert.pose.position.y, markert.pose.position.z)
                 marker_array_text.markers.append(markert)
 
-                # If trajectory history is long enough, predict future positions.
-                #traj_array = np.vstack(trajectory)  # shape: [t, x, y, z]
-                #predicted_traj = predict_trajectory(traj_array)
                
-                if pred is not None:
-                    pred_marker = Marker()
-                    pred_marker.header.frame_id = header.frame_id
-                    pred_marker.header.stamp = header.stamp
-                    # Use a unique id offset (e.g., track_id + 1000)
-                    pred_marker.id = track_id + 1000
-                    pred_marker.action = Marker.ADD
-                    pred_marker.type = Marker.LINE_STRIP
-                    pred_marker.lifetime = Duration(seconds=0.1).to_msg()
-                    pred_marker.scale.x = 0.03  # thickness of the line
-                    # Set color (e.g., red for prediction)
-                    pred_marker.color.r = 1.0
-                    pred_marker.color.g = 0.0
-                    pred_marker.color.b = 0.0
-                    pred_marker.color.a = 0.8
-                    pred_marker.points = []
-                    #for p in predicted_traj:
-                    #    pt = Point(x=float(p[1]), y=float(p[2]), z=float(p[3]))
-                    #    pred_marker.points.append(pt)
-                    for p in pred[0,0]:
-                        pt = Point(x=float(p[0]), y=float(p[1]), z=0.0)
-                        pred_marker.points.append(pt)
-                    prediction_marker_array.markers.append(pred_marker)
-
                 
             # clear ros cache   
-            #if last_box_num > boxes.shape[0]:
             if last_box_num > len(tracked_objects):
                 for i in range(len(tracked_objects), last_box_num): # boxes.shape[0] replaced w len(tracked_objects)
                     marker = Marker()
@@ -473,9 +385,44 @@ class ROS_MODULE(Node):
 
 
             # publish
+            print('length of markers', len(marker_array.markers), self.frame_id_num)
             self.marker_pub.publish(marker_array)
             self.marker_text_pub.publish(marker_array_text)
+
+            
+            if track_ids:
+                print('xx', self.frame_id_num, len(trajectories), track_ids)
+                self.prediction_worker.add_task(track_ids, trajectories)
+            
+            # Retrieve predictions (non-blocking)
+            for idx, (track_id, ob, score, label, trajectory) in enumerate(tracked_objects):
+                pred = self.prediction_worker.get_result(track_id)
+                
+                if pred is not None:
+                    print(pred.shape)
+                    pred_marker = Marker()
+                    pred_marker.header.frame_id = header.frame_id
+                    pred_marker.header.stamp = header.stamp
+                    # Use a unique id offset (e.g., track_id + 1000)
+                    pred_marker.id = track_id + 1000
+                    pred_marker.action = Marker.ADD
+                    pred_marker.type = Marker.LINE_STRIP
+                    pred_marker.lifetime = Duration(seconds=0.1).to_msg()
+                    pred_marker.scale.x = 0.03  # thickness of the line
+                    # Set color (e.g., red for prediction)
+                    pred_marker.color.r = 1.0
+                    pred_marker.color.g = 0.0
+                    pred_marker.color.b = 0.0
+                    pred_marker.color.a = 0.8
+                    pred_marker.points = []
+                    
+                    for p in pred:
+                        pt = Point(x=float(p[0]), y=float(p[1]), z=0.0)
+                        pred_marker.points.append(pt)
+                    prediction_marker_array.markers.append(pred_marker)
+
             self.prediction_pub.publish(prediction_marker_array)
+            
 
             self.frame_id_num += 1
 
