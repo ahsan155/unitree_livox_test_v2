@@ -1,0 +1,3 @@
+model_checkpoint_path: "/media/ahsan/T7/jrdb/checkpoints/pedestrians_eth/ckpts/ckpt-20"
+all_model_checkpoint_paths: "/media/ahsan/T7/jrdb/checkpoints/pedestrians_eth/ckpts/ckpt-20"
+

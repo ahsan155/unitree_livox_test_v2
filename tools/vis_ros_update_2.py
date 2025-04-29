@@ -160,7 +160,7 @@ class ROS_MODULE(Node):
 
         logging.set_verbosity(logging.ERROR)
         gin.parse_config_files_and_bindings(
-            [os.path.join('/media/ahsan/T7/jrdb/checkpoints/pedestrians_eth', 'params', 'operative_config.gin')],
+            [os.path.join('./checkpoints', 'params', 'operative_config.gin')],
             None,
             skip_unknown=True)
         print('Actual gin config used:')
@@ -184,7 +184,7 @@ class ROS_MODULE(Node):
         self.model = hst_model.HumanTrajectorySceneTransformer(model_p)
         _, _ = self.model(next(iter(self.dataset.batch(1))), training=False)
 
-        checkpoint_path = '/media/ahsan/T7/jrdb/checkpoints/pedestrians_eth/ckpts/ckpt-20'
+        checkpoint_path = './checkpoints/ckpts/ckpt-20'
         checkpoint_mngr = tf.train.Checkpoint(model=self.model)
         checkpoint_mngr.restore(checkpoint_path).assert_existing_objects_matched()
         #status = checkpoint_mngr.restore(checkpoint_path)
