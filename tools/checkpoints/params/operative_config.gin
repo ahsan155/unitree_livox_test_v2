@@ -146,8 +146,11 @@ PedestriansDatasetParams.eval_config = 'val'
 PedestriansDatasetParams.num_agents = 14
 PedestriansDatasetParams.num_history_steps = 7 # 7
 PedestriansDatasetParams.num_steps = 20 # 20
-PedestriansDatasetParams.path = \
-    '/media/ahsan/T7/jrdb/human-scene-transformer-old/human_scene_transformer/pedestrians/raw'
+
+# docker path - '/usr/src/app'
+# non-docker path - './raw'
+
+PedestriansDatasetParams.path = './raw'
 PedestriansDatasetParams.timestep = 0.4
 PedestriansDatasetParams.train_config = 'train'
 

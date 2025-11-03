@@ -23,7 +23,7 @@ from human_scene_transformer.pedestrians.dataset_params import PedestriansDatase
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow_graphics.geometry import transformation
+#from tensorflow_graphics.geometry import transformation
 
 
 def _agents_pos_to_ragged_tensor(agents_df):
