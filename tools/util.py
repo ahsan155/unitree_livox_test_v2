@@ -2,7 +2,7 @@
 import numpy as np
 import threading
 import queue
-import tensorflow as tf
+#import tensorflow as tf
 
 class SimpleTracker_old:
     def __init__(self, max_disappeared=5, max_distance=5.0):

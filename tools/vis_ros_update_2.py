@@ -32,14 +32,18 @@ from typing import Sequence
 from absl import app
 from absl import flags
 from absl import logging
-import gin
-from human_scene_transformer.model import model as hst_model
-from human_scene_transformer.model import model_params
-from human_scene_transformer.pedestrians import dataset_params
-from human_scene_transformer.pedestrians import input_fn
+#import gin
+#from human_scene_transformer.model import model as hst_model
+#from human_scene_transformer.model import model_params
+#from human_scene_transformer.pedestrians import dataset_params
+#from human_scene_transformer.pedestrians import input_fn
 import numpy as np
-import tensorflow as tf
+#import tensorflow as tf
 import tqdm
+
+import json
+from std_msgs.msg import String
+
 
 # ros marker
 gtbox_array = MarkerArray()
@@ -133,6 +137,9 @@ class ROS_MODULE(Node):
         self.gtbox_array_pub = self.create_publisher(MarkerArray, '/detect_gtbox', 10)
         self.marker_pub = self.create_publisher(MarkerArray, '/detect_box3d', 10)
         self.marker_text_pub = self.create_publisher(MarkerArray, '/text_det', 10)
+        
+        self.history_pub = self.create_publisher(String, '/agent_histories', 10)
+
 
         # New publisher for predicted trajectories
         self.prediction_pub = self.create_publisher(MarkerArray, '/predicted_traj', 10)
@@ -144,6 +151,7 @@ class ROS_MODULE(Node):
 
 
         self.num_prediction = 0
+        '''
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
             # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
@@ -165,7 +173,8 @@ class ROS_MODULE(Node):
             skip_unknown=True)
         print('Actual gin config used:')
         print(gin.config_str())
-
+        
+        
         d_params = dataset_params.PedestriansDatasetParams(
             num_agents=None,
             eval_config='test'
@@ -192,12 +201,12 @@ class ROS_MODULE(Node):
         logging.info('Restored checkpoint: %s', checkpoint_path)
 
         self.prediction_worker = PredictionWorker(self.model)  # Initialize worker
-
+        '''
         
         
     def __del__(self):
         # Close the file when the node is destroyed
-        self.prediction_worker.stop()  # Cleanup on shutdown
+        #self.prediction_worker.stop()  # Cleanup on shutdown
         self.track_file.close()
 
     @staticmethod
@@ -391,9 +400,40 @@ class ROS_MODULE(Node):
 
             
             if track_ids:
-                print('xx', self.frame_id_num, len(trajectories), track_ids)
-                self.prediction_worker.add_task(track_ids, trajectories)
-            
+                print('info from agent history publisher')
+                print('track_ids', track_ids)
+                print('trajectories', trajectories)
+                #self.prediction_worker.add_task(track_ids, trajectories)
+                '''
+                histories = []
+                for tid, traj in zip(track_ids, trajectories):
+                    # Ensure trajectory is serializable (list of [x,y] or [x,y,z])
+                    traj_list = [ [float(p[0]), float(p[1])] for p in traj ]  # adapt if p has z or other fields
+                    histories.append({
+                        "track_id": int(tid),
+                        "trajectory": traj_list,
+                        "frame_id": header.frame_id if hasattr(header, "frame_id") else "",
+                        # optionally include timestamp to help ordering:
+                        "stamp_sec": header.stamp.sec if hasattr(header, "stamp") else 0,
+                    })
+
+                payload = json.dumps({"histories": histories})
+                msg = String()
+                msg.data = payload
+                self.history_pub.publish(msg)
+                '''
+                trajs_serializable = []
+                for traj in trajectories:
+                    traj_list = [[float(p[0]), float(p[1]), float(p[2]), float(p[3])] for p in traj]
+                    trajs_serializable.append(traj_list)
+
+                payload = {"tids": [int(t) for t in track_ids], "trajectories": trajs_serializable}
+                msg = String()
+                msg.data = json.dumps(payload)
+                self.history_pub.publish(msg)
+
+                
+            '''
             # Retrieve predictions (non-blocking)
             for idx, (track_id, ob, score, label, trajectory) in enumerate(tracked_objects):
                 pred = self.prediction_worker.get_result(track_id)
@@ -422,7 +462,7 @@ class ROS_MODULE(Node):
                     prediction_marker_array.markers.append(pred_marker)
 
             self.prediction_pub.publish(prediction_marker_array)
-            
+            '''
 
             self.frame_id_num += 1
 
