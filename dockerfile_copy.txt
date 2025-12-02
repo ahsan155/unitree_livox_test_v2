@@ -1,0 +1,81 @@
+From dustynv/l4t-pytorch:r35.3.1
+
+RUN apt-get update && apt-get install -y curl gnupg2 lsb-release
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | apt-key add -
+RUN sh -c 'echo "deb http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2-latest.list'
+RUN apt-get update && apt-get install -y ros-foxy-ros-base python3-colcon-common-extensions
+
+# Source setup.bash on container login
+RUN echo "source /opt/ros/foxy/setup.bash" >> ~/.bashrc
+
+
+RUN ls /usr/local | grep cuda
+RUN bash -c "source /opt/ros/foxy/setup.sh && echo \$ROS_DISTRO"
+RUN python3 --version
+
+WORKDIR /livox
+RUN apt install cmake
+RUN git clone https://github.com/Livox-SDK/Livox-SDK2.git
+WORKDIR /livox/Livox-SDK2/build
+RUN cmake .. && make -j
+RUN make install
+
+RUN apt-get update && apt-get install -y \
+    python3-colcon-common-extensions \
+    ros-foxy-ament-cmake-auto \
+    ros-foxy-ament-cmake \
+    ros-foxy-ament-lint-auto \
+    ros-foxy-ament-cmake-gtest \
+    ros-foxy-ament-cmake-gmock \
+    ros-foxy-pcl-conversions \
+    ros-foxy-pcl-msgs \
+    ros-foxy-sensor-msgs-py \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /livox
+RUN git clone https://github.com/Livox-SDK/livox_ros_driver2.git ws_livox/src/livox_ros_driver2
+WORKDIR /livox/ws_livox/src/livox_ros_driver2
+RUN bash -c "source /opt/ros/foxy/setup.sh && ./build.sh ROS2"
+
+WORKDIR /unitree_livox_test
+COPY unitree_livox_test_v2 ./
+
+ENV TORCH_CUDA_ARCH_LIST="8.7"
+RUN python3 setup.py develop
+
+RUN pip install -r requirements_1.txt
+RUN pip install absl-py
+
+RUN apt-get update
+RUN apt-get install -y \
+    build-essential \
+    libbz2-dev \
+    libssl-dev \
+    libffi-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    xz-utils \
+    tk-dev \
+    libxml2-dev \
+    libxmlsec1-dev \
+    liblzma-dev \
+    zlib1g-dev
+
+WORKDIR /py310
+RUN wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz
+RUN tar -xf Python-3.10.14.tgz
+WORKDIR /py310/Python-3.10.14
+# Configure WITH bzip2 support
+RUN ./configure --enable-optimizations --prefix=/usr/local
+RUN make -j$(nproc)
+RUN make altinstall 
+
+RUN /usr/local/bin/python3.10 -m venv /opt/pred_venv
+WORKDIR /unitree_livox_test
+RUN bash -c "source /opt/pred_venv/bin/activate && pip install -r requirements_2.txt"
+
+RUN apt-get update && apt-get install -y ros-foxy-rviz2
+RUN apt-get update
+RUN apt-get install -y libogre-1.12-dev libogre-1.12-dev
